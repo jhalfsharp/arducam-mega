@@ -17,7 +17,7 @@ maintenance = { status = "experimental" }
 # This dependency will be relaxed once embedded-hal is released as 1.0.0. Until
 # then, we target a specific alpha as the previous stable release breaks too
 # much.
-embedded-hal = { version = "1.0.0-alpha.9" }
+embedded-hal = { version = "1.0.0" }
 
 [features]
 default = ["3mp", "5mp"]
@@ -25,7 +25,7 @@ default = ["3mp", "5mp"]
 5mp = []
 
 [dev-dependencies]
-embedded-hal-mock = { git = "https://github.com/dbrgn/embedded-hal-mock", rev = "3d5ecf6" }
+embedded-hal-mock = { git = "https://github.com/dbrgn/embedded-hal-mock"}
 
 # docs.rs-specific configuration
 [package.metadata.docs.rs]

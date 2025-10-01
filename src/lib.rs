@@ -61,7 +61,7 @@ compile_error!(
     "at least one of the `arducam-mega/3mp` or `arducam-mega/5mp` features needs to be enabled"
 );
 
-use embedded_hal::{delay::DelayUs, spi::SpiBus, spi::SpiDevice};
+use embedded_hal::{delay::DelayNs, spi::SpiDevice};
 
 const WRITE_REGISTER_MASK: u8 = 0x80;
 const SENSOR_STATE_MASK: u8 = 0x03;
@@ -375,20 +375,18 @@ pub struct ArducamMega<SPI, Delay> {
 impl<SPI, Delay> ArducamMega<SPI, Delay>
 where
     SPI: SpiDevice,
-    SPI::Bus: SpiBus,
-    Delay: DelayUs,
+    Delay: DelayNs,
 {
     pub fn new(spi: SPI, delay: Delay) -> Self {
         Self { spi, delay }
     }
 
-    fn read_reg(&mut self, addr: RegisterAddress) -> Result<u8, Error<SPI::Error, Delay::Error>> {
+    fn read_reg(&mut self, addr: RegisterAddress) -> Result<u8, SPI::Error> {
         let out: [u8; 1] = [addr as u8];
         let mut buf = [0; 3];
 
         self.spi
-            .transfer(&mut buf[..], &out[..])
-            .map_err(Error::Spi)?;
+            .transfer(&mut buf[..], &out[..])?;
 
         Ok(buf[2])
     }
@@ -397,18 +395,18 @@ where
         &mut self,
         addr: RegisterAddress,
         value: u8,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         let out: [u8; 2] = [addr as u8 | WRITE_REGISTER_MASK, value];
-        self.spi.write(&out[..]).map_err(Error::Spi)?;
+        self.spi.write(&out[..])?;
 
         Ok(self)
     }
 
-    fn wait_idle(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    fn wait_idle(&mut self) -> Result<&mut Self, SPI::Error> {
         while (self.read_reg(RegisterAddress::SensorState)? & SENSOR_STATE_MASK)
             != SENSOR_STATE_IDLE
         {
-            self.delay.delay_us(500u32).map_err(Error::Delay)?;
+            self.delay.delay_ns(500_000u32);
         }
 
         Ok(self)
@@ -418,7 +416,7 @@ where
     ///
     /// This command sends a reset command to the camera. The Arducam SDK uses this after
     /// initialisation to ensure that the sensor is in a known-good state.
-    pub fn reset(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn reset(&mut self) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::SensorReset, SENSOR_RESET_ENABLE)?;
         self.wait_idle()
     }
@@ -427,7 +425,7 @@ where
     ///
     /// This function uses the `SensorId` register in the camera to obtain information about the
     /// sensor type. See [`CameraType`](CameraType) for more information.
-    pub fn get_camera_type(&mut self) -> Result<CameraType, Error<SPI::Error, Delay::Error>> {
+    pub fn get_camera_type(&mut self) -> Result<CameraType, SPI::Error> {
         let id = self.read_reg(RegisterAddress::SensorId)?;
 
         Ok(id.into())
@@ -443,7 +441,7 @@ where
     pub fn set_auto_focus(
         &mut self,
         value: u8,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::AutoFocus, value)?;
         self.wait_idle()
     }
@@ -456,7 +454,7 @@ where
     pub fn set_format(
         &mut self,
         format: Format,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Format, format as u8)?;
         self.wait_idle()
     }
@@ -469,7 +467,7 @@ where
     pub fn set_resolution(
         &mut self,
         resolution: Resolution,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(
             RegisterAddress::Resolution,
             resolution as u8 | WRITE_REGISTER_MASK,
@@ -484,7 +482,7 @@ where
     pub fn set_debug_device_address(
         &mut self,
         addr: u8,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::DebugDeviceAddress, addr)?;
         self.wait_idle()
     }
@@ -493,7 +491,7 @@ where
     ///
     /// This command empties the contents of the camera's FIFO buffer. This is used as part of the
     /// [`capture()`](ArducamMega::capture) function.
-    fn clear_fifo(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    fn clear_fifo(&mut self) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::ArduchipFifo, ArduchipCommand::Clear as u8)
     }
 
@@ -502,7 +500,7 @@ where
     /// This command reads a register in the camera to check if the sensor has finished taking a
     /// picture. You should not attempt to read the FIFO buffer length nor read any FIFO buffer
     /// data prior to this returning `true`.
-    pub fn capture_finished(&mut self) -> Result<bool, Error<SPI::Error, Delay::Error>> {
+    pub fn capture_finished(&mut self) -> Result<bool, SPI::Error> {
         let sensor_state = self.read_reg(RegisterAddress::SensorState)?;
         Ok((sensor_state & CAPTURE_FINISHED_MASK) != 0)
     }
@@ -513,18 +511,18 @@ where
     /// to capture an image. The image will be captured using the currently-configured settings
     /// (white balance, gain, exposure, colour filters, etc). This command blocks until the sensor
     /// has finished capturing the image.
-    pub fn capture(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn capture(&mut self) -> Result<&mut Self, SPI::Error> {
         self.capture_noblock()?;
 
         while !self.capture_finished()? {
-            self.delay.delay_us(500u32).map_err(Error::Delay)?;
+            self.delay.delay_ns(500_000u32);
         }
 
         Ok(self)
     }
 
     /// Non-blocking version of [`capture()`](ArducamMega::capture)
-    pub fn capture_noblock(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn capture_noblock(&mut self) -> Result<&mut Self, SPI::Error> {
         self.clear_fifo()?;
         self.write_reg(RegisterAddress::ArduchipFifo, ArduchipCommand::Start as u8)
     }
@@ -534,7 +532,7 @@ where
     /// This function reads out the size of the FIFO buffer length. This (roughly) represents the
     /// size of the picture. It appears that in some cases, the reported buffer is larger than the
     /// actual picture data.
-    pub fn read_fifo_length(&mut self) -> Result<usize, Error<SPI::Error, Delay::Error>> {
+    pub fn read_fifo_length(&mut self) -> Result<usize, SPI::Error> {
         let size1 = self.read_reg(RegisterAddress::FifoSize1)? as usize;
         let size2 = self.read_reg(RegisterAddress::FifoSize2)? as usize;
         let size3 = self.read_reg(RegisterAddress::FifoSize3)? as usize;
@@ -554,12 +552,11 @@ where
     /// Reading out the entire image data like this will be relatively slow, as each byte transfer
     /// will require an SPI transaction to be setup and ended. For faster transfers, please see
     /// [`read_fifo_full`](ArducamMega::read_fifo_full).
-    pub fn read_fifo_byte(&mut self) -> Result<u8, Error<SPI::Error, Delay::Error>> {
+    pub fn read_fifo_byte(&mut self) -> Result<u8, SPI::Error> {
         let output: [u8; 1] = [FIFO_READ_SINGLE];
         let mut data: [u8; 3] = [0; 3];
         self.spi
-            .transfer(&mut data[..], &output[..])
-            .map_err(Error::Spi)?;
+            .transfer(&mut data[..], &output[..])?;
 
         Ok(data[2])
     }
@@ -584,7 +581,7 @@ where
     pub fn read_fifo_full<T>(
         &mut self,
         data: &mut T,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>>
+    ) -> Result<&mut Self, SPI::Error>
     where
         T: AsMut<[u8]>,
     {
@@ -595,7 +592,23 @@ where
 
         let mut i = 0;
 
-        self.spi
+        //Can no longer use a single spi.transaction, since length isnt known at compile time.
+        
+        // there are more than 63 bytes to be read
+        while i + 63 < length {
+            // send read burst command, read 65 bytes
+            self.spi.transfer(&mut buffer, &output)?;
+            // copy buffer into data array, skipping first two bytes
+            data[i..i + 63].copy_from_slice(&buffer[2..]);
+            i += 63;
+        }
+        // Send another read burst command and read remaining bytes
+        self.spi.transfer(&mut buffer[..(length - i) + 2], &output)?;
+        // Copy buffer contents into data array, skipping first two bytes
+        data[i..].copy_from_slice(&buffer[2..(length - i) + 2]);
+
+        //old busted code
+        /* self.spi
             .transaction(|bus| {
                 // there are more than 63 bytes to be read
                 while i + 63 < length {
@@ -612,8 +625,7 @@ where
                 data[i..].copy_from_slice(&buffer[2..(length - i) + 2]);
 
                 Ok(())
-            })
-            .map_err(Error::Spi)?;
+            })?; */
 
         Ok(self)
     }
@@ -622,7 +634,7 @@ where
         &mut self,
         cc: CameraControl,
         value: ControlValue,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(
             RegisterAddress::GainExposureWhiteBalance,
             cc as u8 | value as u8,
@@ -637,7 +649,7 @@ where
     #[inline]
     pub fn enable_auto_white_balance(
         &mut self,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::WhiteBalance, ControlValue::Enable)
     }
 
@@ -648,31 +660,31 @@ where
     #[inline]
     pub fn disable_auto_white_balance(
         &mut self,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::WhiteBalance, ControlValue::Disable)
     }
 
     /// Enables the camera's automatic gain adjustment
     #[inline]
-    pub fn enable_auto_iso(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn enable_auto_iso(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::Gain, ControlValue::Enable)
     }
 
     /// Disables the camera's automatic gain adjustment
     #[inline]
-    pub fn disable_auto_iso(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn disable_auto_iso(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::Gain, ControlValue::Disable)
     }
 
     /// Enables the camera's automatic exposure control
     #[inline]
-    pub fn enable_auto_exposure(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn enable_auto_exposure(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::Exposure, ControlValue::Enable)
     }
 
     /// Disables the camera's automatic exposure control
     #[inline]
-    pub fn disable_auto_exposure(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn disable_auto_exposure(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::Exposure, ControlValue::Disable)
     }
 
@@ -685,7 +697,7 @@ where
     pub fn set_white_balance_mode(
         &mut self,
         mode: WhiteBalanceMode,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.disable_auto_white_balance()?;
         self.write_reg(RegisterAddress::WhiteBalanceMode, mode as u8)?;
         self.wait_idle()
@@ -695,19 +707,19 @@ where
     fn set_power_mode(
         &mut self,
         mode: PowerMode,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Power, mode as u8)
     }
 
     /// Turns on the camera's low power mode
     #[inline]
-    pub fn enable_low_power_mode(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn enable_low_power_mode(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_power_mode(PowerMode::LowPower)
     }
 
     /// Turns off the camera's low power mode
     #[inline]
-    pub fn disable_low_power_mode(&mut self) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    pub fn disable_low_power_mode(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_power_mode(PowerMode::Normal)
     }
 
@@ -715,7 +727,7 @@ where
     pub fn set_brightness_bias(
         &mut self,
         level: BrightnessLevel,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Brightness, level as u8)?;
         self.wait_idle()
     }
@@ -724,7 +736,7 @@ where
     pub fn set_contrast(
         &mut self,
         level: Level,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Contrast, level as u8)?;
         self.wait_idle()
     }
@@ -733,7 +745,7 @@ where
     pub fn set_saturation(
         &mut self,
         level: Level,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Saturation, level as u8)?;
         self.wait_idle()
     }
@@ -742,7 +754,7 @@ where
     pub fn set_exposure(
         &mut self,
         level: Level,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Exposure, level as u8)?;
         self.wait_idle()
     }
@@ -751,7 +763,7 @@ where
     pub fn set_color_effect(
         &mut self,
         effect: ColorEffect,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::ColorEffect, effect as u8)?;
         self.wait_idle()
     }
@@ -762,7 +774,7 @@ where
     pub fn set_sharpness(
         &mut self,
         level: SharpnessLevel,
-    ) -> Result<&mut Self, Error<SPI::Error, Delay::Error>> {
+    ) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Sharpness, level as u8)?;
         self.wait_idle()
     }
@@ -807,7 +819,7 @@ pub fn find_jpeg_eof(data: &[u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use embedded_hal_mock::{
+    use embedded_hal_mock::eh1::{
         delay,
         spi::{self, Transaction},
     };
@@ -835,7 +847,7 @@ mod tests {
     macro_rules! harness {
         ($e:ident, $s:ident, $c:ident) => {
             let mut $s = spi::Mock::new(&$e);
-            let mut $c = ArducamMega::new(&mut $s, delay::MockNoop::new());
+            let mut $c = ArducamMega::new(&mut $s, delay::NoopDelay::new());
         };
     }
 
@@ -1109,8 +1121,11 @@ mod tests {
     fn read_fifo_full_skips_first_two_bytes_on_long_transfers() {
         let mut buffer = [0; 126];
         let expectations = [
+            //Updated since read_fifo_full requires multiple transactions now
             Transaction::transaction_start(),
             Transaction::transfer(vec![0x3c], vec![0x11; 65]),
+            Transaction::transaction_end(),
+            Transaction::transaction_start(),
             Transaction::transfer(vec![0x3c], vec![0x22; 65]),
             Transaction::transaction_end(),
         ];
@@ -1127,8 +1142,11 @@ mod tests {
     fn read_fifo_full_hands_partial_reads() {
         let mut buffer = [0; 100];
         let expectations = [
+            //Updated since read_fifo_full requires multiple transactions now
             Transaction::transaction_start(),
             Transaction::transfer(vec![0x3c], vec![0x11; 65]),
+            Transaction::transaction_end(),
+            Transaction::transaction_start(),
             Transaction::transfer(vec![0x3c], vec![0x22; 39]),
             Transaction::transaction_end(),
         ];
