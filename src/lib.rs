@@ -385,17 +385,12 @@ where
         let out: [u8; 1] = [addr as u8];
         let mut buf = [0; 3];
 
-        self.spi
-            .transfer(&mut buf[..], &out[..])?;
+        self.spi.transfer(&mut buf[..], &out[..])?;
 
         Ok(buf[2])
     }
 
-    fn write_reg(
-        &mut self,
-        addr: RegisterAddress,
-        value: u8,
-    ) -> Result<&mut Self, SPI::Error> {
+    fn write_reg(&mut self, addr: RegisterAddress, value: u8) -> Result<&mut Self, SPI::Error> {
         let out: [u8; 2] = [addr as u8 | WRITE_REGISTER_MASK, value];
         self.spi.write(&out[..])?;
 
@@ -438,10 +433,7 @@ where
     /// image data. More testing welcome.
     #[cfg_attr(docsrs, doc(cfg(feature = "5mp")))]
     #[cfg(feature = "5mp")]
-    pub fn set_auto_focus(
-        &mut self,
-        value: u8,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_auto_focus(&mut self, value: u8) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::AutoFocus, value)?;
         self.wait_idle()
     }
@@ -451,10 +443,7 @@ where
     /// This function allows you to control what format the camera captures pictures in.
     /// `Format::Jpeg` provides a good mix between image size and quality, and is the
     /// default.
-    pub fn set_format(
-        &mut self,
-        format: Format,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_format(&mut self, format: Format) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Format, format as u8)?;
         self.wait_idle()
     }
@@ -464,10 +453,7 @@ where
     /// This function allows you to control the resolution of the pictures that are captured by the
     /// camera. Both the 3MP and 5MP cameras have two different default resolutions. See
     /// [`Resolution`](Resolution) for more details.
-    pub fn set_resolution(
-        &mut self,
-        resolution: Resolution,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_resolution(&mut self, resolution: Resolution) -> Result<&mut Self, SPI::Error> {
         self.write_reg(
             RegisterAddress::Resolution,
             resolution as u8 | WRITE_REGISTER_MASK,
@@ -479,10 +465,7 @@ where
     ///
     /// The Arducam SDK uses this command as part of the camera initialisation with the address
     /// `0x78`, however this does not appear to be necessary for the camera to function properly.
-    pub fn set_debug_device_address(
-        &mut self,
-        addr: u8,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_debug_device_address(&mut self, addr: u8) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::DebugDeviceAddress, addr)?;
         self.wait_idle()
     }
@@ -555,8 +538,7 @@ where
     pub fn read_fifo_byte(&mut self) -> Result<u8, SPI::Error> {
         let output: [u8; 1] = [FIFO_READ_SINGLE];
         let mut data: [u8; 3] = [0; 3];
-        self.spi
-            .transfer(&mut data[..], &output[..])?;
+        self.spi.transfer(&mut data[..], &output[..])?;
 
         Ok(data[2])
     }
@@ -578,10 +560,7 @@ where
     /// [`find_jpeg_eof()`](find_jpeg_eof) to help trim the data stream.
     ///
     /// This function is not currently tested with other data formats (YUV, RGB).
-    pub fn read_fifo_full<T>(
-        &mut self,
-        data: &mut T,
-    ) -> Result<&mut Self, SPI::Error>
+    pub fn read_fifo_full<T>(&mut self, data: &mut T) -> Result<&mut Self, SPI::Error>
     where
         T: AsMut<[u8]>,
     {
@@ -593,7 +572,7 @@ where
         let mut i = 0;
 
         //Can no longer use a single spi.transaction, since length isnt known at compile time.
-        
+
         // there are more than 63 bytes to be read
         while i + 63 < length {
             // send read burst command, read 65 bytes
@@ -603,29 +582,26 @@ where
             i += 63;
         }
         // Send another read burst command and read remaining bytes
-        self.spi.transfer(&mut buffer[..(length - i) + 2], &output)?;
+        self.spi
+            .transfer(&mut buffer[..(length - i) + 2], &output)?;
         // Copy buffer contents into data array, skipping first two bytes
         data[i..].copy_from_slice(&buffer[2..(length - i) + 2]);
 
-        //old busted code
-        /* self.spi
-            .transaction(|bus| {
-                // there are more than 63 bytes to be read
-                while i + 63 < length {
-                    // Send the read burst command and read 65 bytes
-                    bus.transfer(&mut buffer, &output)?;
-                    // Copy buffer contents into data array, skipping first two bytes
-                    data[i..i + 63].copy_from_slice(&buffer[2..]);
-                    i += 63;
-                }
+        Ok(self)
+    }
 
-                // Send another read burst command and read remaining bytes
-                bus.transfer(&mut buffer[..(length - i) + 2], &output)?;
-                // Copy buffer contents into data array, skipping first two bytes
-                data[i..].copy_from_slice(&buffer[2..(length - i) + 2]);
+    pub fn read_fifo_burst<T>(&mut self, data: &mut T) -> Result<&mut Self, SPI::Error>
+    where
+        T: AsMut<[u8]>,
+    {
+        let data = data.as_mut();
+        assert!(data.len() >= 63);
 
-                Ok(())
-            })?; */
+        let output: [u8; 1] = [FIFO_READ_BURST];
+        let mut buffer: [u8; 65] = [0; 65];
+
+        self.spi.transfer(&mut buffer, &output)?;
+        data[0..63].copy_from_slice(&buffer[2..]);
 
         Ok(self)
     }
@@ -647,9 +623,7 @@ where
     /// **Note**: This appears to not work on the ArducamMega 5MP, where pictures are severely
     /// green-tinted when using AWB.
     #[inline]
-    pub fn enable_auto_white_balance(
-        &mut self,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn enable_auto_white_balance(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::WhiteBalance, ControlValue::Enable)
     }
 
@@ -658,9 +632,7 @@ where
     /// This function is automatically called by
     /// [`set_white_balance_mode()`](ArducamMega::set_white_balance_mode).
     #[inline]
-    pub fn disable_auto_white_balance(
-        &mut self,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn disable_auto_white_balance(&mut self) -> Result<&mut Self, SPI::Error> {
         self.set_auto_camera_control(CameraControl::WhiteBalance, ControlValue::Disable)
     }
 
@@ -704,10 +676,7 @@ where
     }
 
     #[inline]
-    fn set_power_mode(
-        &mut self,
-        mode: PowerMode,
-    ) -> Result<&mut Self, SPI::Error> {
+    fn set_power_mode(&mut self, mode: PowerMode) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Power, mode as u8)
     }
 
@@ -724,46 +693,31 @@ where
     }
 
     /// Sets the camera's brightness bias
-    pub fn set_brightness_bias(
-        &mut self,
-        level: BrightnessLevel,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_brightness_bias(&mut self, level: BrightnessLevel) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Brightness, level as u8)?;
         self.wait_idle()
     }
 
     /// Sets the camera's contrast
-    pub fn set_contrast(
-        &mut self,
-        level: Level,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_contrast(&mut self, level: Level) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Contrast, level as u8)?;
         self.wait_idle()
     }
 
     /// Sets the camera's saturation
-    pub fn set_saturation(
-        &mut self,
-        level: Level,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_saturation(&mut self, level: Level) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Saturation, level as u8)?;
         self.wait_idle()
     }
 
     /// Sets the camera's exposure
-    pub fn set_exposure(
-        &mut self,
-        level: Level,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_exposure(&mut self, level: Level) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Exposure, level as u8)?;
         self.wait_idle()
     }
 
     /// Sets the camera's color effect
-    pub fn set_color_effect(
-        &mut self,
-        effect: ColorEffect,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_color_effect(&mut self, effect: ColorEffect) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::ColorEffect, effect as u8)?;
         self.wait_idle()
     }
@@ -771,10 +725,7 @@ where
     /// Sets the camera's sharpness
     #[cfg_attr(docsrs, doc(cfg(feature = "3mp")))]
     #[cfg(feature = "3mp")]
-    pub fn set_sharpness(
-        &mut self,
-        level: SharpnessLevel,
-    ) -> Result<&mut Self, SPI::Error> {
+    pub fn set_sharpness(&mut self, level: SharpnessLevel) -> Result<&mut Self, SPI::Error> {
         self.write_reg(RegisterAddress::Sharpness, level as u8)?;
         self.wait_idle()
     }
