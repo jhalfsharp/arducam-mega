@@ -606,6 +606,21 @@ where
         Ok(self)
     }
 
+    /// An intentionally extremely thin wrapper over the raw SPI transfer, to be used for debugging
+    pub fn read_fifo_sized<T>(&mut self, data: &mut T, size: usize) -> Result<&mut Self, SPI::Error>
+    where
+        T: AsMut<[u8]>,
+    {
+        let data = data.as_mut();
+        assert!(data.len() >= size);
+
+        let output: [u8; 1] = [FIFO_READ_BURST];
+
+        self.spi.transfer(data, &output)?;
+
+        Ok(self)
+    }
+
     fn set_auto_camera_control(
         &mut self,
         cc: CameraControl,
