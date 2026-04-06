@@ -607,7 +607,7 @@ where
     }
 
     /// An intentionally extremely thin wrapper over the raw SPI transfer, to be used for debugging
-    pub fn read_fifo_sized<T>(&mut self, data: &mut T) -> Result<&mut Self, SPI::Error>
+    pub fn read_fifo_sized<T: ?Sized>(&mut self, data: &mut T) -> Result<&mut Self, SPI::Error>
     where
         T: AsMut<[u8]>,
     {
