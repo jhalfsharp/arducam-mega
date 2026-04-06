@@ -537,10 +537,10 @@ where
     /// [`read_fifo_full`](ArducamMega::read_fifo_full).
     pub fn read_fifo_byte(&mut self) -> Result<u8, SPI::Error> {
         let output: [u8; 1] = [FIFO_READ_SINGLE];
-        let mut data: [u8; 3] = [0; 3];
+        let mut data: [u8; 2] = [0; 2];
         self.spi.transfer(&mut data[..], &output[..])?;
 
-        Ok(data[2])
+        Ok(data[1])
     }
 
     /// Reads out the entire FIFO buffer
